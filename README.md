@@ -2,7 +2,7 @@ C++ library that lets you scan for and change different types of data internally
 
 Example usage:
 ```cpp
-#include "mem.h"
+#include "memscan.h"
 
 int main() {
     Mem mem;
