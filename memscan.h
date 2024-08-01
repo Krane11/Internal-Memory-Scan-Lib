@@ -19,7 +19,7 @@ public:
                     bool match = true;
                     for (size_t y = 0; y < target.length(); ++y) {
 
-                        if (*(byte*)(address + x + y) != target[y]) {
+                        if (*(unsigned char*)(address + x + y) != target[y]) {
                             match = false;
                             break;
                         }
@@ -35,25 +35,16 @@ public:
         return true;
     }
 
-    bool ReplaceString(const std::vector<size_t>& addresses, const std::string& oldValue, const std::string& newValue) {
+    bool ReplaceString(const std::vector<size_t>& addresses, const std::string& newValue) {
         //loop through addresses
         for (const auto& addr : addresses) {
-            size_t oldSize = oldValue.length();
             size_t newSize = newValue.length();
             SIZE_T bytesWritten;
+
             //write to the address
             if (WriteProcessMemory(GetCurrentProcess(), (LPVOID)addr, newValue.c_str(), newSize, &bytesWritten) &&
                 bytesWritten == newSize) {
-                size_t sizeDifference = newSize - oldSize;
-                //adjust the surrounding data if diff size
-                if (sizeDifference > 0) {
-                    //new value is greater then old value
-                    memmove((void*)(addr + newSize), (void*)(addr + oldSize), sizeDifference);
-                }
-                else if (sizeDifference < 0) {
-                    //new value is less then old value
-                    memset((void*)(addr + newSize), 0, -static_cast<ptrdiff_t>(sizeDifference));
-                }
+                memset((void*)(addr + newSize), 0, 1); //set one byte to null after the string
             }
         }
         return true;
@@ -87,29 +78,19 @@ public:
         return true;
     }
 
-bool ReplaceUnicode(const std::vector<size_t>& addresses, const std::wstring& oldValue, const std::wstring& newValue) {
+bool ReplaceUnicode(const std::vector<size_t>& addresses, const std::wstring& newValue) {
     //loop through addresses
     for (const auto& addr : addresses) {
-        size_t oldSize = oldValue.length();
         size_t newSize = newValue.length();
-        size_t lengthToWrite = std::min<size_t>(oldSize, newSize);
-        //write to the address
         SIZE_T bytesWritten;
-        if (WriteProcessMemory(GetCurrentProcess(), (LPVOID)addr, newValue.c_str(), lengthToWrite * sizeof(wchar_t), &bytesWritten) &&
-            bytesWritten == lengthToWrite * sizeof(wchar_t)) {
-            //adjust the surrounding data if diff size
-            size_t sizeDifference = (newSize > oldSize) ? 0 : oldSize - newSize;
-            if (sizeDifference > 0) {
-                //new value is greater then old value
-                memset((void*)(addr + newSize * sizeof(wchar_t)), 0, sizeDifference * sizeof(wchar_t));
-            }
-            else if (sizeDifference < 0) {
-                //new value is smaller then the old value
-                memmove((void*)(addr + newSize * sizeof(wchar_t)), (const void*)(addr + oldSize * sizeof(wchar_t)), -static_cast<ptrdiff_t>(sizeDifference) * sizeof(wchar_t));
-            }
+
+        //write to the address
+        if (WriteProcessMemory(GetCurrentProcess(), (LPVOID)addr, newValue.c_str(), newSize * sizeof(wchar_t), &bytesWritten) &&
+            bytesWritten == newSize * sizeof(wchar_t)) {
+            memset((void*)(addr + newSize * sizeof(wchar_t)), 0, sizeof(wchar_t));  //set one byte to null after the string
         }
     }
-    return true; 
+    return true;
 }
 
 bool FindFloat(std::vector<size_t>& addresses, float target) {
@@ -183,7 +164,7 @@ bool FindAOB(std::vector<size_t>& addresses, const char* pattern, const char* ma
                 bool match = true;
                 for (size_t y = 0; mask[y] != '\0'; ++y) {
 
-                    if (mask[y] == 'x' && pattern[y] != *(byte*)(address + x + y)) {
+                    if (mask[y] == 'x' && pattern[y] != *(unsigned char*)(address + x + y)) {
                         match = false;
                         break;
                     }
@@ -220,7 +201,7 @@ bool FindAOBHex(std::vector<size_t>& addresses, const char* pattern) {
             for (size_t x = 0; x < mbi.RegionSize - patternBytes.size(); ++x) {
                 bool match = true;
                 for (size_t y = 0; y < patternBytes.size(); ++y) {
-                    if (*(byte*)(address + x + y) != patternBytes[y]) {
+                    if (*(unsigned char*)(address + x + y) != patternBytes[y]) {
                         match = false;
                         break;
                     }
@@ -235,41 +216,23 @@ bool FindAOBHex(std::vector<size_t>& addresses, const char* pattern) {
     return !addresses.empty();
 }
 
-bool ReplaceAOBHex(const std::vector<size_t>& addresses, const char* pattern, const char* newValue) {
-    std::vector<unsigned char> patternBytes = HexStringToBytes(pattern);
+bool ReplaceAOBHex(const std::vector<size_t>& addresses, const char* newValue) {
     std::vector<unsigned char> newValueBytes = HexStringToBytes(newValue);
+
     //loop through addresses
     for (const auto& addr : addresses) {
-        bool patternStillPresent = true;
-        for (size_t y = 0; y < patternBytes.size(); ++y) {
-            if (*(byte*)(addr + y) != patternBytes[y]) {
-                patternStillPresent = false;
-                break;
-            }
-        }
+        size_t newSize = newValueBytes.size();
+        SIZE_T bytesWritten;
 
-        if (patternStillPresent) {
-            size_t lengthToWrite = std::min<size_t>(newValueBytes.size(), patternBytes.size());
-
-            //write to the address
-            SIZE_T bytesWritten;
-            if (WriteProcessMemory(GetCurrentProcess(), (LPVOID)addr, newValueBytes.data(), lengthToWrite, &bytesWritten) &&
-                bytesWritten == lengthToWrite) {
-                size_t sizeDifference = patternBytes.size() - newValueBytes.size();
-                //adjust the surrounding data if diff size
-                if (sizeDifference > 0) {
-                    //new value is less then old value
-                    memset((void*)(addr + lengthToWrite), 0, sizeDifference);
-                }
-                else if (sizeDifference < 0) {
-                    //new value is greater then old value
-                    memmove((void*)(addr + lengthToWrite), (const void*)(addr + patternBytes.size()), -static_cast<ptrdiff_t>(sizeDifference));
-                }
-            }
+        //write to address
+        if (WriteProcessMemory(GetCurrentProcess(), (LPVOID)addr, newValueBytes.data(), newSize, &bytesWritten) &&
+            bytesWritten == newSize) {
+            memset((void*)(addr + newSize), 0, 1);  //set one byte to null after the new value
         }
     }
     return true;
 }
+
 
 private:
     std::vector<unsigned char> HexStringToBytes(const char* hexString) {
